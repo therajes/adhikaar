@@ -43,11 +43,17 @@ export const demoCredentials: DemoCredential[] = [
   }
 ]
 
-// Supabase publishable keys are designed for browser use. The checked-in fallback is
-// the fixed key created by the local Supabase CLI and cannot access hosted data.
+// Supabase publishable keys are designed for browser use. Localhost uses the fixed
+// key created by the local Supabase CLI; public builds use the hosted project's
+// independently rotatable publishable key when deployment variables are omitted.
 const localPublishableKey = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZS1kZW1vIiwicm9sZSI6ImFub24iLCJleHAiOjE5ODM4MTI5OTZ9.CRXP1A7WOeoJeXxjNni43kdQwgnWNReilDMblYTn_I0'
-const supabaseUrl = import.meta.env.VITE_SUPABASE_URL || 'http://127.0.0.1:54321'
-const publishableKey = import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY || localPublishableKey
+const hostedSupabaseUrl = 'https://yjwwrainneuqpzcppurb.supabase.co'
+const hostedPublishableKey = 'sb_publishable_YCU_Qg4EoQs-GZezFYxv1A_0sPOvnzz'
+const isLocalhost = ['localhost', '127.0.0.1', '::1'].includes(window.location.hostname)
+const fallbackUrl = isLocalhost ? 'http://127.0.0.1:54321' : hostedSupabaseUrl
+const fallbackKey = isLocalhost ? localPublishableKey : hostedPublishableKey
+const supabaseUrl = import.meta.env.VITE_SUPABASE_URL || fallbackUrl
+const publishableKey = import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY || fallbackKey
 
 export const supabase: SupabaseClient = createClient(supabaseUrl, publishableKey, {
   auth: {
