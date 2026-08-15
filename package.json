@@ -1,0 +1,22 @@
+{
+  "name": "adhikaar",
+  "version": "0.1.0",
+  "private": true,
+  "engines": {
+    "node": ">=24"
+  },
+  "workspaces": [
+    "apps/web"
+  ],
+  "scripts": {
+    "dev": "npm run dev -w @adhikaar/web",
+    "build": "npm run build -w @adhikaar/web",
+    "test": "npm run test -w @adhikaar/web",
+    "test:e2e": "npm run test:e2e -w @adhikaar/web",
+    "test:e2e:chain": "npm run test:e2e:chain -w @adhikaar/web",
+    "lint": "npm run lint -w @adhikaar/web"
+  },
+  "devDependencies": {
+    "supabase": "2.114.0"
+  }
+}
