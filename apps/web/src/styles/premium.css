@@ -233,6 +233,26 @@ main:focus { outline: none; }
 .privacy-chip strong, .profile-card strong { font-size: .88rem; }
 
 .login-shell { margin-top: 1.4rem; background: rgba(255,255,255,.58); }
+.route-main .login-story h1 {
+  color: #fffdf8;
+  text-shadow: 0 3px 28px rgba(0, 0, 0, .28);
+}
+.route-main .login-story h1 em { color: #ff9b7e; }
+.route-main .login-story-copy > p {
+  color: #dbe7ec;
+  text-shadow: 0 2px 18px rgba(0, 0, 0, .34);
+}
+.route-main .login-assurance > span {
+  color: #dce7eb;
+  border-color: rgba(255, 255, 255, .25);
+  background: rgba(7, 29, 49, .58);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, .1), 0 12px 30px rgba(0, 0, 0, .12);
+  font-size: .78rem;
+}
+.route-main .login-assurance strong {
+  color: #fffdf8;
+  font-size: .83rem;
+}
 .login-panel { padding: clamp(2rem,3.5vw,4.2rem); }
 .login-panel h2 { font-size: clamp(2.5rem,3vw,3.5rem); }
 .login-panel > .muted { font-size: .84rem; }
