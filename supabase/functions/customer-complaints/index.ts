@@ -57,6 +57,8 @@ Deno.serve(async (request) => {
           const { error } = await database.from('revocations').insert({ institution_id: membership.institution_id, subject_type: 'representative', subject_id: subjectId, reason_code: 'customer_complaint_confirmed', reason_text: 'Administrator confirmed a customer report.', leaf_hash: leafHash, created_by: user.id })
           if (error) throw error
         }
+        const { error: statusError } = await database.from('representatives').update({ status: 'revoked', revoked_at: new Date().toISOString() }).eq('id', subjectId).eq('institution_id', membership.institution_id)
+        if (statusError) throw statusError
       }
       const { error } = await database.from('customer_complaints').update({
         status: decision === 'revoke' ? 'credential_revoked' : 'dismissed', resolved_by: user.id, resolved_at: new Date().toISOString()

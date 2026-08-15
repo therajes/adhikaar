@@ -17,6 +17,10 @@ Deno.serve(async (request) => {
     const leafHash = await sha256(`ADHIKAAR:REVOCATION:V1:${institutionId}:${subjectType}:${subjectId}:${new Date().toISOString()}`)
     const { data, error } = await database.from('revocations').insert({ institution_id: institutionId, subject_type: subjectType, subject_id: subjectId, reason_code: String(input.reasonCode ?? 'security_action'), reason_text: String(input.reasonText ?? '').slice(0, 300), leaf_hash: leafHash, created_by: user.id }).select('id,effective_at,leaf_hash').single()
     if (error) throw error
+    if (subjectType === 'representative') {
+      const { error: statusError } = await database.from('representatives').update({ status: 'revoked', revoked_at: new Date().toISOString() }).eq('id', subjectId).eq('institution_id', institutionId)
+      if (statusError) throw statusError
+    }
     return respond({ schemaVersion: 1, revocation: data }, 201)
   } catch { return respond({ error: { code: 'invalid_request' } }, 400) }
 })
