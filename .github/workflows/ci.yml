@@ -1,0 +1,72 @@
+name: ADHIKAAR verification
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  web-and-browser:
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+      - run: npm ci
+      - run: npm run test -w @adhikaar/web -- --run
+      - run: npm run build
+      - run: npx playwright install --with-deps chromium
+      - run: npx supabase start
+      - name: Serve local Edge Functions
+        run: ALLOWED_ORIGIN=http://127.0.0.1:4173 DEMO_BOOTSTRAP_ENABLED=true npx supabase functions serve > /tmp/adhikaar-functions.log 2>&1 &
+      - name: Wait for Edge Functions
+        run: curl --fail --retry 20 --retry-delay 1 --retry-connrefused http://127.0.0.1:54321/functions/v1/demo-bootstrap
+      - run: npx supabase test db
+      - run: npm run test:e2e
+      - if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: browser-report
+          path: apps/web/playwright-report
+          if-no-files-found: ignore
+
+  swift-core:
+    runs-on: macos-15
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: swift-actions/setup-swift@v3
+        with:
+          swift-version: '6.3.3'
+      - run: swift test
+        working-directory: packages/AdhikaarCore
+
+  solidity-registry:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: foundry-rs/foundry-toolchain@v1
+      - run: forge test -vvv
+        working-directory: contracts
+
+  dependency-and-secret-safety:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+      - run: npm ci
+      - run: npm audit --audit-level=high
+      - name: Reject privileged credentials in browser source
+        run: |
+          ! rg -n --hidden --glob '!node_modules/**' '(SUPABASE_SERVICE_ROLE_KEY|sb_secret_)' apps packages
