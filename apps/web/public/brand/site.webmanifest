@@ -1,0 +1,23 @@
+{
+  "name": "ADHIKAAR",
+  "short_name": "ADHIKAAR",
+  "description": "Verify what a representative is authorised to ask.",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#F8F3EA",
+  "theme_color": "#071D31",
+  "icons": [
+    {
+      "src": "/brand/apple-touch-icon.png",
+      "sizes": "180x180",
+      "type": "image/png",
+      "purpose": "any"
+    },
+    {
+      "src": "/brand/adhikaar-mark.svg",
+      "sizes": "any",
+      "type": "image/svg+xml",
+      "purpose": "any maskable"
+    }
+  ]
+}

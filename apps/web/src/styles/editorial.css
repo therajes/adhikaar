@@ -60,10 +60,12 @@ body {
 .brand-mark {
   width: 48px;
   height: 48px;
-  border-radius: 50% 50% 50% 16px;
-  background: linear-gradient(145deg, #123754, var(--midnight));
-  box-shadow: 0 10px 22px rgba(7, 29, 49, .19);
+  border-radius: 15px;
+  background: transparent;
+  box-shadow: 0 10px 22px rgba(7, 29, 49, .16);
+  overflow: hidden;
 }
+.brand-mark img { display: block; width: 100%; height: 100%; }
 .brand small { margin-top: .05rem; font-size: .59rem; letter-spacing: .015em; }
 .site-header nav { gap: .45rem; padding: .3rem; border-radius: 999px; background: rgba(232, 239, 241, .6); }
 .site-header nav a { padding: .55rem .9rem; border-radius: 999px; font-size: .77rem; }

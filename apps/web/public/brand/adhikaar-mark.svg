@@ -1,0 +1,27 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 256 256" role="img" aria-labelledby="title description">
+  <title id="title">ADHIKAAR</title>
+  <desc id="description">Two sides joined by a verified path</desc>
+  <defs>
+    <linearGradient id="surface" x1="36" y1="24" x2="224" y2="236" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#173F5D"/>
+      <stop offset="1" stop-color="#071D31"/>
+    </linearGradient>
+    <linearGradient id="citizen" x1="48" y1="58" x2="132" y2="202" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#36B5A9"/>
+      <stop offset="1" stop-color="#16827C"/>
+    </linearGradient>
+    <linearGradient id="institution" x1="204" y1="60" x2="128" y2="202" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#F29A7D"/>
+      <stop offset="1" stop-color="#E8795E"/>
+    </linearGradient>
+    <filter id="shadow" x="-20%" y="-20%" width="140%" height="150%">
+      <feDropShadow dx="0" dy="12" stdDeviation="13" flood-color="#071D31" flood-opacity=".2"/>
+    </filter>
+  </defs>
+  <rect x="16" y="16" width="224" height="224" rx="68" fill="url(#surface)" filter="url(#shadow)"/>
+  <path d="M44 107c0-31 25-56 56-56h24v38h-20c-13 0-24 11-24 24v44c0 18 12 34 29 39-38-2-65-30-65-67v-22Z" fill="url(#citizen)"/>
+  <path d="M212 107c0-31-25-56-56-56h-24v38h20c13 0 24 11 24 24v44c0 18-12 34-29 39 38-2 65-30 65-67v-22Z" fill="url(#institution)"/>
+  <path d="M128 52 88 171h29l11-35 11 35h29L128 52Z" fill="#FFF9EE"/>
+  <path d="m108 134 15 15 30-33" fill="none" stroke="#071D31" stroke-width="12" stroke-linecap="round" stroke-linejoin="round"/>
+  <circle cx="128" cy="206" r="8" fill="#F4C66C"/>
+</svg>
