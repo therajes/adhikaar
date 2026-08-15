@@ -24,9 +24,17 @@ jobs:
       - run: npx playwright install --with-deps chromium
       - run: npx supabase start
       - name: Serve local Edge Functions
-        run: ALLOWED_ORIGIN=http://127.0.0.1:4173 DEMO_BOOTSTRAP_ENABLED=true npx supabase functions serve > /tmp/adhikaar-functions.log 2>&1 &
+        run: npx supabase functions serve --env-file supabase/functions.ci.env > /tmp/adhikaar-functions.log 2>&1 &
       - name: Wait for Edge Functions
-        run: curl --fail --retry 20 --retry-delay 1 --retry-connrefused http://127.0.0.1:54321/functions/v1/demo-bootstrap
+        run: |
+          for attempt in $(seq 1 30); do
+            if curl --fail --silent --show-error http://127.0.0.1:54321/functions/v1/demo-bootstrap; then
+              exit 0
+            fi
+            sleep 1
+          done
+          tail -100 /tmp/adhikaar-functions.log
+          exit 1
       - run: npx supabase test db
       - run: npm run test:e2e
       - if: always()
