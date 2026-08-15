@@ -12,16 +12,24 @@ import './styles/premium.css'
 import QRCode from 'qrcode'
 import { createIcons, ArrowRight, BadgeCheck, Building2, Check, ChevronRight, CircleHelp, Clock3, Copy, Fingerprint, Gavel, Globe2, KeyRound, Landmark, Languages, LogIn, LogOut, Phone, RefreshCw, RotateCcw, ScanLine, ShieldCheck, ShieldX, UserRoundCheck, UsersRound, X, Zap } from 'lucide'
 import { attacks } from './security/attackSuite'
-import { DemoIssuanceError, authoriseDemoReplacement, issueDemoMandate, listCustomerComplaints, resolveCustomerComplaint, resolveDemoMandate, submitCustomerComplaint, bankPolicy, demoRepresentativeStatus, revokeDemoRepresentative } from './services/demoStore'
+import { DemoIssuanceError, authoriseDemoReplacement, enrolRepresentativeDevice, issueDemoMandate, listCustomerComplaints, resolveCustomerComplaint, resolveDemoMandate, submitCustomerComplaint, bankPolicy, demoRepresentativeStatus, revokeDemoRepresentative } from './services/demoStore'
 import { getOrCreateRepresentativeKey, randomCode, removeRepresentativeKey, rotateRepresentativeKey, sha256, stableStringify } from './services/cryptoBridge'
 import { loadSwiftVerifier, swiftStatus, verifyWithSwift } from './services/wasmBridge'
 import { t, type Language } from './i18n'
 import type { Evidence, VerificationResult } from './types'
-import { demoCredentials, destinationFor, getIdentity, mayAccess, signIn, signOut, type AppIdentity } from './services/auth'
+import { demoCredentials, destinationFor, getIdentity, mayAccess, signIn, signOut, supabase, type AppIdentity } from './services/auth'
 
 const app = document.querySelector<HTMLDivElement>('#app')!
 let language: Language = (localStorage.getItem('adhikaar:language') as Language | null) ?? 'en'
 let citizenChallenge = randomCode(8)
+const realtimeChannels: ReturnType<typeof supabase.channel>[] = []
+
+function clearRealtimeChannels(): void {
+  while (realtimeChannels.length) {
+    const channel = realtimeChannels.pop()
+    if (channel) void supabase.removeChannel(channel)
+  }
+}
 let currentIdentity: AppIdentity | null = null
 
 const icons = { ArrowRight, BadgeCheck, Building2, Check, ChevronRight, CircleHelp, Clock3, Copy, Fingerprint, Gavel, Globe2, KeyRound, Landmark, Languages, LogIn, LogOut, Phone, RefreshCw, RotateCcw, ScanLine, ShieldCheck, ShieldX, UserRoundCheck, UsersRound, X, Zap }
@@ -283,13 +291,19 @@ async function bindPage(): Promise<void> {
       if (keyStatus) keyStatus.textContent = 'Rotation required'
     }
   })
-  document.querySelector('#rotate-key')?.addEventListener('click', () => void rotateRepresentativeKey().then(() => {
-    if (keyStatus) keyStatus.textContent = 'Rotated just now'
-    if (enrolmentStatus) enrolmentStatus.textContent = 'New local key · enrols on first proof'
-  }).catch(() => {
-    if (keyStatus) keyStatus.textContent = 'Rotation unavailable'
-    if (enrolmentStatus) enrolmentStatus.textContent = 'Signing key unavailable'
-  }))
+  document.querySelector('#rotate-key')?.addEventListener('click', () => void (async () => {
+    try {
+      if (keyStatus) keyStatus.textContent = 'Rotating and synchronising…'
+      const pair = await rotateRepresentativeKey()
+      const publicKeyJwk = await crypto.subtle.exportKey('jwk', pair.publicKey)
+      await enrolRepresentativeDevice(publicKeyJwk)
+      if (keyStatus) keyStatus.textContent = 'Rotated and synchronised just now'
+      if (enrolmentStatus) enrolmentStatus.textContent = 'Institution enrolment confirmed'
+    } catch {
+      if (keyStatus) keyStatus.textContent = 'Rotation unavailable'
+      if (enrolmentStatus) enrolmentStatus.textContent = 'Signing key unavailable'
+    }
+  })())
   document.querySelector('#remove-key')?.addEventListener('click', () => void removeRepresentativeKey().then(() => {
     if (keyStatus) keyStatus.textContent = 'Removed — recreated on next proof'
     if (enrolmentStatus) enrolmentStatus.textContent = 'No local signing key'
@@ -403,6 +417,20 @@ async function bindPage(): Promise<void> {
     createIcons({ icons })
   }
   if (revokeButton) void updateRevocationCard()
+  if (currentIdentity?.institutionId && (adminGrid || enrolmentStatus)) {
+    const refreshLiveState = () => {
+      if (adminGrid) { void renderComplaints(); void updateRevocationCard() }
+      if (enrolmentStatus) void demoRepresentativeStatus().then(status => {
+        if (status.replacementPending) { enrolmentStatus.textContent = 'Replacement approved · rotate key before next proof'; if (keyStatus) keyStatus.textContent = 'Rotation required' }
+        else if (status.id && !status.revoked) enrolmentStatus.textContent = 'Institution enrolment confirmed'
+      })
+    }
+    const channel = supabase.channel(`authority-live-${currentIdentity.institutionId}`)
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'representatives', filter: `institution_id=eq.${currentIdentity.institutionId}` }, refreshLiveState)
+      .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'revocations', filter: `institution_id=eq.${currentIdentity.institutionId}` }, refreshLiveState)
+    if (adminGrid) channel.on('postgres_changes', { event: '*', schema: 'public', table: 'customer_complaints', filter: `institution_id=eq.${currentIdentity.institutionId}` }, refreshLiveState)
+    realtimeChannels.push(channel); channel.subscribe()
+  }
   revokeButton?.addEventListener('click', () => void (async () => {
     const message = document.querySelector<HTMLElement>('#revocation-message')!
     revokeButton.disabled = true
@@ -449,6 +477,7 @@ async function bindPage(): Promise<void> {
 }
 
 async function render(): Promise<void> {
+  clearRealtimeChannels()
   const path = location.pathname
   const routeChanged = path !== previousRoute
   app.classList.remove('route-ready')

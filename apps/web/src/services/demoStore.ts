@@ -50,6 +50,11 @@ export async function resolveCustomerComplaint(complaintId: string, decision: 'd
   if (error) throw new Error('The administrator decision could not be saved.')
 }
 
+export async function enrolRepresentativeDevice(publicKeyJwk: JsonWebKey): Promise<void> {
+  const { error } = await supabase.functions.invoke('enrol-device', { body: { publicKeyJwk } })
+  if (error) throw new Error('The rotated key could not be synchronised with the organisation.')
+}
+
 export async function demoRepresentativeStatus(): Promise<{ id: string; institutionId: string; revoked: boolean; replacementPending: boolean }> {
   const { data: representative, error } = await supabase.from('representatives').select('id,institution_id,status,credential_id,auth_user_id,created_at').eq('display_name', 'Aarav Sharma — DEMO').order('created_at', { ascending: false }).limit(1).maybeSingle()
   if (error || !representative) return { id: '', institutionId: '20000000-0000-0000-0000-000000000001', revoked: false, replacementPending: false }
