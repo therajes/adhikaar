@@ -56,11 +56,9 @@ export async function enrolRepresentativeDevice(publicKeyJwk: JsonWebKey): Promi
 }
 
 export async function demoRepresentativeStatus(): Promise<{ id: string; institutionId: string; revoked: boolean; replacementPending: boolean }> {
-  const { data: representative, error } = await supabase.from('representatives').select('id,institution_id,status,credential_id,auth_user_id,created_at').eq('display_name', 'Aarav Sharma — DEMO').order('created_at', { ascending: false }).limit(1).maybeSingle()
-  if (error || !representative) return { id: '', institutionId: '20000000-0000-0000-0000-000000000001', revoked: false, replacementPending: false }
-  const { data: revocations } = await supabase.from('revocations').select('id').eq('subject_type', 'representative').eq('subject_id', representative.id).limit(1)
-  const revoked = representative.status === 'revoked' || Boolean(revocations?.length)
-  return { id: representative.id, institutionId: representative.institution_id, revoked, replacementPending: revoked && !representative.auth_user_id }
+  const { data, error } = await supabase.functions.invoke('representative-status', { body: {} })
+  if (error || !data?.representative) return { id: '', institutionId: '20000000-0000-0000-0000-000000000001', revoked: false, replacementPending: false }
+  return data.representative as { id: string; institutionId: string; revoked: boolean; replacementPending: boolean }
 }
 
 export async function revokeDemoRepresentative(): Promise<void> {

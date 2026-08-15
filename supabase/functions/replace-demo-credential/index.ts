@@ -18,7 +18,7 @@ Deno.serve(async (request) => {
       .eq('membership_role', 'institution_admin').eq('status', 'active').maybeSingle()
     if (!membership) return respond({ error: { code: 'not_authorised' } }, 403)
 
-    const { data: representative } = await database.from('representatives').select('id,display_name')
+    const { data: representative } = await database.from('representatives').select('id,display_name,auth_user_id')
       .eq('id', representativeId).eq('institution_id', institutionId).maybeSingle()
     if (!representative || representative.display_name !== 'Aarav Sharma — DEMO') return respond({ error: { code: 'demo_subject_required' } }, 400)
     const { data: revocation } = await database.from('revocations').select('id')
@@ -30,6 +30,8 @@ Deno.serve(async (request) => {
       status: 'revoked', revoked_at: new Date().toISOString(), auth_user_id: null
     }).eq('id', representativeId).eq('institution_id', institutionId)
     if (error) throw error
+    if (representative.auth_user_id) await database.from('institution_memberships').update({ updated_at: new Date().toISOString() })
+      .eq('institution_id', institutionId).eq('user_id', representative.auth_user_id)
     return respond({ schemaVersion: 1, replacementAuthorised: true, oldRevocationPreserved: true })
   } catch {
     return respond({ error: { code: 'replacement_failed' } }, 400)

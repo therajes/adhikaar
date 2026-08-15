@@ -463,6 +463,7 @@ async function bindPage(): Promise<void> {
     const channel = supabase.channel(`authority-live-${currentIdentity.institutionId}`)
       .on('postgres_changes', { event: '*', schema: 'public', table: 'representatives', filter: `institution_id=eq.${currentIdentity.institutionId}` }, refreshLiveState)
       .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'revocations', filter: `institution_id=eq.${currentIdentity.institutionId}` }, refreshLiveState)
+      .on('postgres_changes', { event: 'UPDATE', schema: 'public', table: 'institution_memberships', filter: `institution_id=eq.${currentIdentity.institutionId}` }, refreshLiveState)
     if (adminGrid) channel.on('postgres_changes', { event: '*', schema: 'public', table: 'customer_complaints', filter: `institution_id=eq.${currentIdentity.institutionId}` }, payload => {
       const list = document.querySelector<HTMLElement>('#complaint-list')
       const record = payload.new as { id?: string; message?: string; created_at?: string; status?: string }
