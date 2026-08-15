@@ -23,7 +23,7 @@ Deno.serve(async (request) => {
     if (!representative || representative.display_name !== 'Aarav Sharma — DEMO') return respond({ error: { code: 'demo_subject_required' } }, 400)
     const { data: revocation } = await database.from('revocations').select('id')
       .eq('subject_type', 'representative').eq('subject_id', representativeId)
-      .eq('reason_code', 'judge_demo_revocation').maybeSingle()
+      .in('reason_code', ['judge_demo_revocation', 'customer_complaint_confirmed']).limit(1).maybeSingle()
     if (!revocation) return respond({ error: { code: 'immutable_revocation_required' } }, 409)
 
     const { error } = await database.from('representatives').update({
