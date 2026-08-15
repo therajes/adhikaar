@@ -401,7 +401,7 @@ async function bindPage(): Promise<void> {
     const passed = results.filter(Boolean).length; document.querySelector('#suite-summary')!.innerHTML = `<strong>${passed}/${results.length}</strong> defined adversarial checks rejected as expected${passed === results.length ? ' ✓' : ''}`
   })())
   const adminGrid = document.querySelector<HTMLElement>('.admin-grid')
-  if (adminGrid) adminGrid.insertAdjacentHTML('afterend', '<section class="complaints-panel"><span class="section-kicker">Customer safety inbox</span><h2>Reports from verified interactions</h2><p>Only reports tied to this organisation’s employee proofs appear here.</p><div id="complaint-list" aria-live="polite"><div class="loading"><span></span><p>Loading customer reports…</p></div></div></section>')
+  if (adminGrid) adminGrid.insertAdjacentHTML('afterend', '<section class="complaints-panel"><span class="section-kicker">Customer safety inbox</span><h2>Reports from verified interactions</h2><p>Only reports tied to this organisation’s employee proofs appear here. <span id="complaint-live-status" class="complaint-live-status">Connecting live inbox…</span></p><div id="complaint-list" aria-live="polite"><div class="loading"><span></span><p>Loading customer reports…</p></div></div></section>')
   const renderComplaints = async () => {
     const list = document.querySelector<HTMLElement>('#complaint-list'); if (!list) return
     try {
@@ -409,7 +409,19 @@ async function bindPage(): Promise<void> {
       list.innerHTML = complaints.length ? complaints.map(item => `<article class="complaint-card"><div><span>${escape(item.citizenName)} · ${new Date(item.created_at).toLocaleString()}</span><strong>${escape(item.representatives?.display_name ?? 'Organisation employee')}</strong><p>${escape(item.message)}</p></div>${item.status === 'pending' ? `<div class="complaint-actions"><button class="button secondary" data-complaint="${item.id}" data-decision="dismiss">Dismiss</button><button class="button primary" data-complaint="${item.id}" data-decision="revoke">Revoke credential</button></div>` : `<span class="complaint-state">${item.status === 'credential_revoked' ? 'Credential revoked' : 'Dismissed'}</span>`}</article>`).join('') : '<div class="empty-inbox"><strong>No customer reports</strong><p>New reports from verified calls will appear here.</p></div>'
       list.querySelectorAll<HTMLButtonElement>('[data-complaint]').forEach(button => button.addEventListener('click', () => void (async () => {
         button.disabled = true
-        try { await resolveCustomerComplaint(button.dataset.complaint!, button.dataset.decision as 'dismiss' | 'revoke'); await renderComplaints() }
+        try {
+          const decision = button.dataset.decision as 'dismiss' | 'revoke'
+          await resolveCustomerComplaint(button.dataset.complaint!, decision)
+          if (decision === 'revoke') {
+            document.querySelector<HTMLElement>('#revocation-console')?.classList.add('revoked')
+            const credentialStatus = document.querySelector<HTMLElement>('#credential-status')
+            if (credentialStatus) credentialStatus.innerHTML = '<span></span>Revoked in the immutable trust record'
+            const mainRevokeButton = document.querySelector<HTMLButtonElement>('#revoke-representative')
+            if (mainRevokeButton) { mainRevokeButton.disabled = false; mainRevokeButton.className = 'button secondary wide'; mainRevokeButton.innerHTML = '<i data-lucide="rotate-ccw"></i>Issue replacement credential' }
+          }
+          await renderComplaints()
+          createIcons({ icons })
+        }
         catch (decisionError) { button.disabled = false; list.insertAdjacentHTML('afterbegin', `<p class="inline-error">${escape(decisionError instanceof Error ? decisionError.message : 'Decision failed.')}</p>`) }
       })()))
     } catch (complaintError) { list.innerHTML = `<p class="inline-error">${escape(complaintError instanceof Error ? complaintError.message : 'Customer reports unavailable.')}</p>` }
@@ -451,8 +463,20 @@ async function bindPage(): Promise<void> {
     const channel = supabase.channel(`authority-live-${currentIdentity.institutionId}`)
       .on('postgres_changes', { event: '*', schema: 'public', table: 'representatives', filter: `institution_id=eq.${currentIdentity.institutionId}` }, refreshLiveState)
       .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'revocations', filter: `institution_id=eq.${currentIdentity.institutionId}` }, refreshLiveState)
-    if (adminGrid) channel.on('postgres_changes', { event: '*', schema: 'public', table: 'customer_complaints', filter: `institution_id=eq.${currentIdentity.institutionId}` }, refreshLiveState)
-    realtimeChannels.push(channel); channel.subscribe()
+    if (adminGrid) channel.on('postgres_changes', { event: '*', schema: 'public', table: 'customer_complaints', filter: `institution_id=eq.${currentIdentity.institutionId}` }, payload => {
+      const list = document.querySelector<HTMLElement>('#complaint-list')
+      const record = payload.new as { id?: string; message?: string; created_at?: string; status?: string }
+      if (payload.eventType === 'INSERT' && list && record.id && !list.querySelector(`[data-live-complaint="${record.id}"]`)) {
+        list.querySelector('.empty-inbox')?.remove()
+        list.insertAdjacentHTML('afterbegin', `<article class="complaint-card live-arrival" data-live-complaint="${record.id}"><div><span>New customer report · ${new Date(record.created_at ?? Date.now()).toLocaleString()}</span><strong>Verified interaction</strong><p>${escape(record.message ?? '')}</p></div><span class="complaint-state">Arrived just now</span></article>`)
+      }
+      window.setTimeout(() => void renderComplaints(), 80)
+    })
+    realtimeChannels.push(channel)
+    channel.subscribe(status => {
+      const liveStatus = document.querySelector<HTMLElement>('#complaint-live-status')
+      if (liveStatus) { liveStatus.textContent = status === 'SUBSCRIBED' ? '● Live inbox connected' : 'Connecting live inbox…'; liveStatus.classList.toggle('connected', status === 'SUBSCRIBED') }
+    })
   }
   revokeButton?.addEventListener('click', () => void (async () => {
     const message = document.querySelector<HTMLElement>('#revocation-message')!
