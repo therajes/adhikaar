@@ -38,6 +38,7 @@
 }
 
 .complaint-box,.complaints-panel{margin-top:1.25rem;padding:clamp(1.25rem,3vw,2rem);border:1px solid rgba(20,67,84,.14);border-radius:28px;background:rgba(255,255,255,.92);box-shadow:0 18px 55px rgba(13,45,58,.09)}
+.employee-welcome.credential-disabled{border-color:rgba(190,57,62,.32);background:linear-gradient(135deg,rgba(255,245,244,.96),rgba(255,255,255,.92))}.employee-welcome.credential-disabled .session-trust{color:#a32f38}.employee-welcome.credential-disabled+.page-head .profile-card .status-dot{color:#b7353f}
 .complaint-box textarea{width:100%;min-height:118px;margin:1rem 0;padding:1rem;border:1px solid #b8c8d0;border-radius:16px;background:#fff;color:#102b3a;font:inherit;resize:vertical}
 .complaint-feedback{min-height:1.5rem;margin-top:.75rem;color:#31576a}
 .complaints-panel{max-width:1180px;margin:2rem auto}

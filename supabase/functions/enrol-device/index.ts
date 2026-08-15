@@ -21,6 +21,13 @@ Deno.serve(async (request) => {
       .select('institution_id,membership_role,status')
       .eq('user_id', user.id).eq('membership_role', 'representative').eq('status', 'active').maybeSingle()
     if (!membership) return respond({ error: { code: 'active_membership_required' } }, 403)
+    const { data: existingRepresentative } = await database.from('representatives').select('id')
+      .eq('auth_user_id', user.id).eq('institution_id', membership.institution_id).maybeSingle()
+    if (existingRepresentative) {
+      const { data: revocation } = await database.from('revocations').select('id')
+        .eq('subject_type', 'representative').eq('subject_id', existingRepresentative.id).limit(1).maybeSingle()
+      if (revocation) return respond({ error: { code: 'credential_revoked' } }, 403)
+    }
     const { data: profile } = await database.from('profiles').select('display_name').eq('id', user.id).single()
     const keyHash = await sha256(stableStringify(publicKey))
     const now = new Date()

@@ -21,6 +21,9 @@ Deno.serve(async (request) => {
     const database = serviceClient()
     const { data: representative } = await database.from('representatives').select('*').eq('auth_user_id', user.id).eq('status', 'active').single()
     if (!representative) return respond({ error: { code: 'active_credential_required' } }, 403)
+    const { data: revocation } = await database.from('revocations').select('id')
+      .eq('subject_type', 'representative').eq('subject_id', representative.id).limit(1).maybeSingle()
+    if (revocation) return respond({ error: { code: 'credential_revoked' } }, 403)
     const policyId = String(mandate.policyId ?? '')
     const policyVersion = Number(mandate.policyVersion ?? 0)
     const { data: policy } = await database.from('policy_versions').select('*').eq('institution_id', representative.institution_id).eq('policy_code', policyId).eq('version', policyVersion).eq('status', 'active').single()
@@ -31,7 +34,7 @@ Deno.serve(async (request) => {
     const issuedAt = Number(mandate.issuedAt); const expiresAt = Number(mandate.expiresAt)
     if (!Number.isSafeInteger(issuedAt) || !Number.isSafeInteger(expiresAt) || expiresAt <= issuedAt || expiresAt - issuedAt > Number(policy.policy_json.maximumMandateLifetime ?? 90)) throw new Error('invalid_ttl')
     const publicKey = await crypto.subtle.importKey('jwk', representative.public_key_jwk, { name: 'ECDSA', namedCurve: 'P-256' }, false, ['verify'])
-    const validSignature = await crypto.subtle.verify({ name: 'ECDSA', hash: 'SHA-256' }, publicKey, decodeBase64Url(signature), new TextEncoder().encode(stableStringify(mandate)))
+    const validSignature = await crypto.subtle.verify({ name: 'ECDSA', hash: 'SHA-256' }, publicKey, decodeBase64Url(signature).buffer as ArrayBuffer, new TextEncoder().encode(stableStringify(mandate)))
     if (!validSignature) return respond({ error: { code: 'invalid_signature' } }, 400)
     const { error } = await database.from('mandates').insert({
       mandate_id: String(mandate.mandateId), verification_code: String(mandate.verificationCode),

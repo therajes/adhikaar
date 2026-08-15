@@ -281,27 +281,51 @@ async function bindPage(): Promise<void> {
   })
   const keyStatus = document.querySelector('#key-status')
   const enrolmentStatus = document.querySelector('#device-enrolment-status')
+  const renderEmployeeAccessState = (status: Awaited<ReturnType<typeof demoRepresentativeStatus>>) => {
+    if (!enrolmentStatus) return
+    const welcome = document.querySelector<HTMLElement>('.employee-welcome')
+    const session = welcome?.querySelector<HTMLElement>('.session-trust span')
+    const profileState = document.querySelector<HTMLElement>('.profile-card .status-dot')
+    const disabled = status.revoked
+    welcome?.classList.toggle('credential-disabled', disabled)
+    if (session) session.innerHTML = disabled
+      ? `<strong>${status.replacementPending ? 'Replacement credential approved' : 'Employee credential disabled'}</strong>Representative access · ${status.replacementPending ? 'Key rotation required' : 'Revoked'}`
+      : '<strong>Employee authenticated</strong>Representative access · Active'
+    if (profileState) profileState.textContent = disabled ? 'Disabled' : 'Active'
+    document.querySelectorAll<HTMLInputElement | HTMLButtonElement | HTMLTextAreaElement>('#issue-form input, #issue-form button, #issue-form textarea').forEach(control => { control.disabled = disabled })
+    if (status.replacementPending) {
+      enrolmentStatus.textContent = 'Replacement approved · rotate key before next proof'
+      if (keyStatus) keyStatus.textContent = 'Rotation required'
+    } else if (status.revoked) {
+      enrolmentStatus.textContent = 'Credential revoked by organisation'
+      if (keyStatus) keyStatus.textContent = 'Disabled · administrator action required'
+    } else if (status.id) enrolmentStatus.textContent = 'Institution enrolment confirmed'
+  }
   if (keyStatus) void getOrCreateRepresentativeKey().then(() => { keyStatus.textContent = 'Ready on this browser' }).catch(() => {
     keyStatus.textContent = 'Unavailable'
     if (enrolmentStatus) enrolmentStatus.textContent = 'Signing key unavailable'
   })
-  if (enrolmentStatus) void demoRepresentativeStatus().then(status => {
-    if (status.replacementPending) {
-      enrolmentStatus.textContent = 'Replacement approved · rotate key before next proof'
-      if (keyStatus) keyStatus.textContent = 'Rotation required'
-    }
-  })
+  if (enrolmentStatus) void demoRepresentativeStatus().then(renderEmployeeAccessState)
   document.querySelector('#rotate-key')?.addEventListener('click', () => void (async () => {
+    let rotatedLocally = false
     try {
       if (keyStatus) keyStatus.textContent = 'Rotating and synchronising…'
       const pair = await rotateRepresentativeKey()
+      rotatedLocally = true
       const publicKeyJwk = await crypto.subtle.exportKey('jwk', pair.publicKey)
       await enrolRepresentativeDevice(publicKeyJwk)
       if (keyStatus) keyStatus.textContent = 'Rotated and synchronised just now'
       if (enrolmentStatus) enrolmentStatus.textContent = 'Institution enrolment confirmed'
+      renderEmployeeAccessState(await demoRepresentativeStatus())
     } catch {
-      if (keyStatus) keyStatus.textContent = 'Rotation unavailable'
-      if (enrolmentStatus) enrolmentStatus.textContent = 'Signing key unavailable'
+      const status = await demoRepresentativeStatus()
+      renderEmployeeAccessState(status)
+      if (rotatedLocally && status.revoked && !status.replacementPending) {
+        if (keyStatus) keyStatus.textContent = 'Rotated locally · awaiting administrator re-issue'
+        if (enrolmentStatus) enrolmentStatus.textContent = 'Organisation powers remain disabled'
+      } else {
+        if (keyStatus) keyStatus.textContent = 'Rotation could not be synchronised'
+      }
     }
   })())
   document.querySelector('#remove-key')?.addEventListener('click', () => void removeRepresentativeKey().then(() => {
@@ -397,6 +421,7 @@ async function bindPage(): Promise<void> {
     const consoleCard = document.querySelector<HTMLElement>('#revocation-console')!
     const statusLabel = document.querySelector<HTMLElement>('#credential-status')!
     const status = await demoRepresentativeStatus()
+    consoleCard.classList.toggle('revoked', status.revoked)
     if (!status.id) {
       statusLabel.innerHTML = '<span></span>Awaiting employee device enrolment'
       revokeButton.disabled = true
@@ -412,6 +437,7 @@ async function bindPage(): Promise<void> {
     } else {
       statusLabel.innerHTML = '<span></span>Active and in good standing'
       revokeButton.disabled = false
+      revokeButton.className = 'button primary wide'
       revokeButton.innerHTML = '<i data-lucide="shield-x"></i>Revoke fictional credential'
     }
     createIcons({ icons })
@@ -420,10 +446,7 @@ async function bindPage(): Promise<void> {
   if (currentIdentity?.institutionId && (adminGrid || enrolmentStatus)) {
     const refreshLiveState = () => {
       if (adminGrid) { void renderComplaints(); void updateRevocationCard() }
-      if (enrolmentStatus) void demoRepresentativeStatus().then(status => {
-        if (status.replacementPending) { enrolmentStatus.textContent = 'Replacement approved · rotate key before next proof'; if (keyStatus) keyStatus.textContent = 'Rotation required' }
-        else if (status.id && !status.revoked) enrolmentStatus.textContent = 'Institution enrolment confirmed'
-      })
+      if (enrolmentStatus) void demoRepresentativeStatus().then(renderEmployeeAccessState)
     }
     const channel = supabase.channel(`authority-live-${currentIdentity.institutionId}`)
       .on('postgres_changes', { event: '*', schema: 'public', table: 'representatives', filter: `institution_id=eq.${currentIdentity.institutionId}` }, refreshLiveState)
