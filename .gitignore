@@ -1,0 +1,17 @@
+.DS_Store
+.env
+.env.local
+.swiftpm/
+.build/
+node_modules/
+dist/
+playwright-report/
+test-results/
+coverage/
+contracts/cache/
+contracts/broadcast/
+contracts/out/
+supabase/.branches/
+supabase/.temp/
+work/
+.adhikaar/
