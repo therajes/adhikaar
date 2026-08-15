@@ -2,15 +2,16 @@ import { body, json, preflight, serviceClient, sha256, stableStringify, userClie
 
 Deno.serve(async (request) => {
   const options = preflight(request); if (options) return options
-  if (request.method !== 'POST') return json({ error: { code: 'method_not_allowed' } }, 405)
+  const respond = (payload: unknown, status = 200) => json(payload, status, request)
+  if (request.method !== 'POST') return respond({ error: { code: 'method_not_allowed' } }, 405)
   try {
     const session = userClient(request)
     const { data: { user }, error: authError } = await session.auth.getUser()
-    if (authError || !user) return json({ error: { code: 'authentication_required' } }, 401)
+    if (authError || !user) return respond({ error: { code: 'authentication_required' } }, 401)
     const input = await body(request, 4096)
     const publicKey = input.publicKeyJwk as JsonWebKey | undefined
     if (!publicKey || publicKey.kty !== 'EC' || publicKey.crv !== 'P-256' || typeof publicKey.x !== 'string' || typeof publicKey.y !== 'string' || publicKey.d) {
-      return json({ error: { code: 'invalid_public_key' } }, 400)
+      return respond({ error: { code: 'invalid_public_key' } }, 400)
     }
 
     // Importing the key rejects malformed points before anything is persisted.
@@ -19,7 +20,7 @@ Deno.serve(async (request) => {
     const { data: membership } = await database.from('institution_memberships')
       .select('institution_id,membership_role,status')
       .eq('user_id', user.id).eq('membership_role', 'representative').eq('status', 'active').maybeSingle()
-    if (!membership) return json({ error: { code: 'active_membership_required' } }, 403)
+    if (!membership) return respond({ error: { code: 'active_membership_required' } }, 403)
     const { data: profile } = await database.from('profiles').select('display_name').eq('id', user.id).single()
     const keyHash = await sha256(stableStringify(publicKey))
     const now = new Date()
@@ -56,8 +57,8 @@ Deno.serve(async (request) => {
     }
     const { error } = await database.from('representatives').upsert(row, { onConflict: 'auth_user_id,institution_id' })
     if (error) throw error
-    return json({ schemaVersion: 1, enrolled: true, keyId: row.key_id, fingerprint: keyHash.slice(0, 20) })
+    return respond({ schemaVersion: 1, enrolled: true, keyId: row.key_id, fingerprint: keyHash.slice(0, 20) })
   } catch {
-    return json({ error: { code: 'enrolment_failed', message: 'This device could not be enrolled.' } }, 400)
+    return respond({ error: { code: 'enrolment_failed', message: 'This device could not be enrolled.' } }, 400)
   }
 })

@@ -18,7 +18,11 @@ jobs:
         with:
           node-version: 24
           cache: npm
+      - uses: denoland/setup-deno@v2
+        with:
+          deno-version: v2.x
       - run: npm ci
+      - run: deno test --allow-env --allow-read --allow-net supabase/tests/cors_contract_test.ts
       - run: npm run test -w @adhikaar/web -- --run
       - run: npm run build
       - run: npx playwright install --with-deps chromium

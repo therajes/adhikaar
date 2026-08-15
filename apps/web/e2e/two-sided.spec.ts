@@ -29,7 +29,7 @@ test('receiver and employee complete a valid proof from separate authenticated d
   await expect(employee.locator('#key-status')).toContainText('Ready')
   await employee.locator('#employee-challenge').fill(challenge!)
   await employee.getByRole('button', { name: 'Create 90-second proof' }).click()
-  await expect(employee.getByText('Signed by this device')).toBeVisible()
+  await expect(employee.getByText('Signed and accepted by the institution')).toBeVisible()
   const verificationCode = (await employee.locator('.proof-share strong').textContent())?.trim()
   expect(verificationCode).toMatch(/^[A-HJ-NP-Z2-9]{6}$/)
 

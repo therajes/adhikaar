@@ -13,6 +13,21 @@ export const bankPolicy: Policy = {
 const recordKey = (code: string) => `adhikaar:mandate:${code}`
 const anonymousSessionKey = 'adhikaar:anonymous-session'
 
+export type DemoIssuanceErrorCode = 'invalid_challenge' | 'no_actions' | 'off_policy' | 'device_key_unavailable' | 'secure_service_unavailable' | 'submission_rejected'
+
+export class DemoIssuanceError extends Error {
+  readonly name = 'DemoIssuanceError'
+
+  constructor(readonly code: DemoIssuanceErrorCode, message: string) {
+    super(message)
+  }
+}
+
+export interface DemoIssuanceResult {
+  evidence: Evidence
+  localCacheStored: boolean
+}
+
 export async function demoRepresentativeStatus(): Promise<{ id: string; institutionId: string; revoked: boolean }> {
   const { data: representative, error } = await supabase.from('representatives').select('id,institution_id,status,credential_id').eq('display_name', 'Aarav Sharma — DEMO').maybeSingle()
   if (error || !representative) return { id: '', institutionId: '20000000-0000-0000-0000-000000000001', revoked: false }
@@ -36,11 +51,11 @@ export async function revokeDemoRepresentative(): Promise<void> {
   if (error) throw new Error('The immutable revocation could not be published.')
 }
 
-export async function issueDemoMandate(challenge: string, requestedActionCodes: string[]): Promise<Evidence> {
+export async function issueDemoMandate(challenge: string, requestedActionCodes: string[]): Promise<DemoIssuanceResult> {
   const normalized = challenge.toUpperCase().replaceAll('-', '').replaceAll(' ', '')
-  if (!/^[ABCDEFGHJKLMNPQRSTUVWXYZ23456789]{8}$/u.test(normalized)) throw new Error('Enter the receiver’s valid 8-character challenge.')
-  if (!requestedActionCodes.length) throw new Error('Choose at least one permitted action.')
-  if (requestedActionCodes.some(action => !bankPolicy.permittedActionCodes.includes(action))) throw new Error('This request is outside your signed policy and cannot be issued.')
+  if (!/^[ABCDEFGHJKLMNPQRSTUVWXYZ23456789]{8}$/u.test(normalized)) throw new DemoIssuanceError('invalid_challenge', 'Enter the receiver’s valid 8-character challenge.')
+  if (!requestedActionCodes.length) throw new DemoIssuanceError('no_actions', 'Choose at least one permitted action.')
+  if (requestedActionCodes.some(action => !bankPolicy.permittedActionCodes.includes(action))) throw new DemoIssuanceError('off_policy', 'This request is outside your signed policy and cannot be issued.')
   const now = Math.floor(Date.now() / 1000)
   const salt = randomCode(16)
   const mandate: Mandate = {
@@ -52,7 +67,12 @@ export async function issueDemoMandate(challenge: string, requestedActionCodes: 
     issuedAt: now, expiresAt: now + 90, policyId: bankPolicy.policyId, policyVersion: bankPolicy.version,
     registryRoot: '0x4f7c2e7d8f3a-demo-registry-root'
   }
-  const signed = await signPayload(mandate)
+  let signed: Awaited<ReturnType<typeof signPayload>>
+  try {
+    signed = await signPayload(mandate)
+  } catch {
+    throw new DemoIssuanceError('device_key_unavailable', 'This browser could not access its private signing key. Rotate the device key and try again.')
+  }
   const evidence: Evidence = {
     schemaVersion: 1, mandate, policy: bankPolicy, signatureValid: true,
     credentialSignatureValid: true, registryProofValid: true, registryRootMatches: true,
@@ -60,21 +80,33 @@ export async function issueDemoMandate(challenge: string, requestedActionCodes: 
     challengeMatches: true, trustAgeSeconds: 1, maximumTrustAgeSeconds: 300,
     evaluatedAt: now, signature: signed.signature, representativePublicKeyJwk: signed.publicJwk
   }
-  const { error: enrolmentError } = await supabase.functions.invoke('enrol-device', { body: { publicKeyJwk: signed.publicJwk } })
-  if (enrolmentError) throw new Error('Your device key could not be enrolled with the institution. Check that local Supabase Functions are running.')
-  const { error: submissionError } = await supabase.functions.invoke('submit-mandate', {
-    body: {
-      mandate,
-      signature: signed.signature,
-      canonicalHash: await sha256(stableStringify(mandate)),
-      nonceHash: await sha256(mandate.nonce)
-    }
-  })
-  if (submissionError) throw new Error('The signed proof was rejected by the institution backend.')
+  try {
+    const { error: enrolmentError } = await supabase.functions.invoke('enrol-device', { body: { publicKeyJwk: signed.publicJwk } })
+    if (enrolmentError) throw new DemoIssuanceError('secure_service_unavailable', 'The secure institution service is unavailable right now. No proof was issued. Please try again in a moment.')
+    const { error: submissionError } = await supabase.functions.invoke('submit-mandate', {
+      body: {
+        mandate,
+        signature: signed.signature,
+        canonicalHash: await sha256(stableStringify(mandate)),
+        nonceHash: await sha256(mandate.nonce)
+      }
+    })
+    if (submissionError) throw new DemoIssuanceError('submission_rejected', 'The institution did not accept this proof. No proof was issued. Review the request and try again.')
+  } catch (error) {
+    if (error instanceof DemoIssuanceError) throw error
+    throw new DemoIssuanceError('secure_service_unavailable', 'The secure institution service is unavailable right now. No proof was issued. Please try again in a moment.')
+  }
   // Retain a same-device cache only as a resilience aid. The authoritative exchange
   // happens through Supabase so the citizen and employee can use separate devices.
-  localStorage.setItem(recordKey(mandate.verificationCode), JSON.stringify(evidence))
-  return evidence
+  let localCacheStored = false
+  try {
+    localStorage.setItem(recordKey(mandate.verificationCode), JSON.stringify(evidence))
+    localCacheStored = true
+  } catch {
+    // The institution has already accepted the proof. A blocked/full browser cache
+    // must not turn that successful issuance into a false failure.
+  }
+  return { evidence, localCacheStored }
 }
 
 export async function resolveDemoMandate(code: string, challenge: string): Promise<Evidence> {
@@ -103,7 +135,14 @@ export async function resolveDemoMandate(code: string, challenge: string): Promi
     (item.subject_type === 'representative' && item.subject_id === bundle.representative.id) ||
     (item.subject_type === 'credential' && item.subject_id === bundle.representative.credential_id)
   )
-  const latestSnapshot = bundle.registrySnapshots.map(item => item.published_at ? Date.parse(item.published_at) : 0).sort((a, b) => b - a)[0] ?? Date.now()
+  // `resolvedAt` is the freshness timestamp for this live evidence bundle. A
+  // registry root can remain valid for longer than five minutes; treating its
+  // original publication time as the age of a just-fetched revocation check made
+  // every seeded demo proof become permanently stale after five minutes.
+  const resolvedAt = Date.parse(bundle.resolvedAt)
+  const trustAgeSeconds = Number.isFinite(resolvedAt)
+    ? Math.max(0, Math.floor((Date.now() - resolvedAt) / 1000))
+    : 301
   const evidence: Evidence = {
     schemaVersion: 1,
     mandate: bundle.mandate,
@@ -116,7 +155,7 @@ export async function resolveDemoMandate(code: string, challenge: string): Promi
     revoked,
     nonceConsumedByOtherSession: false,
     challengeMatches: false,
-    trustAgeSeconds: Math.max(0, Math.floor((Date.now() - latestSnapshot) / 1000)),
+    trustAgeSeconds,
     maximumTrustAgeSeconds: 300,
     evaluatedAt: Math.floor(Date.now() / 1000),
     signature: bundle.signature,

@@ -1,23 +1,51 @@
 import { createClient } from 'npm:@supabase/supabase-js@2.57.4'
 
-const allowedOrigin = Deno.env.get('ALLOWED_ORIGIN') ?? 'http://localhost:5173'
-export const securityHeaders = {
-  'Access-Control-Allow-Origin': allowedOrigin,
-  'Access-Control-Allow-Headers': 'authorization, apikey, content-type, x-client-info',
-  'Access-Control-Allow-Methods': 'POST, OPTIONS',
-  'Access-Control-Max-Age': '600',
-  'Cache-Control': 'no-store',
-  'Content-Security-Policy': "default-src 'none'; frame-ancestors 'none'",
-  'Cross-Origin-Resource-Policy': 'same-site',
-  'Referrer-Policy': 'no-referrer',
-  'X-Content-Type-Options': 'nosniff',
+const defaultOrigins = [
+  'https://adhikaar-web.vercel.app',
+  'https://adhikaar.vercel.app',
+  'http://localhost:5173',
+  'http://127.0.0.1:5173',
+].join(',')
+
+const configuredOrigins = (Deno.env.get('ALLOWED_ORIGINS') ?? Deno.env.get('ALLOWED_ORIGIN') ?? defaultOrigins)
+  .split(',')
+  .map(origin => origin.trim())
+  .filter(Boolean)
+
+const allowedOriginFor = (request?: Request): string | undefined => {
+  if (configuredOrigins.includes('*')) return '*'
+  const origin = request?.headers.get('Origin')
+  if (!origin) return configuredOrigins[0]
+  return configuredOrigins.includes(origin) ? origin : undefined
 }
 
-export const json = (body: unknown, status = 200) =>
-  new Response(JSON.stringify(body), { status, headers: { ...securityHeaders, 'Content-Type': 'application/json' } })
+export const securityHeaders = (request?: Request): Record<string, string> => {
+  const headers: Record<string, string> = {
+    'Access-Control-Allow-Headers': 'authorization, apikey, content-type, x-client-info',
+    'Access-Control-Allow-Methods': 'POST, OPTIONS',
+    'Access-Control-Max-Age': '600',
+    'Cache-Control': 'no-store',
+    'Content-Security-Policy': "default-src 'none'; frame-ancestors 'none'",
+    'Cross-Origin-Resource-Policy': 'same-site',
+    'Referrer-Policy': 'no-referrer',
+    'Vary': 'Origin',
+    'X-Content-Type-Options': 'nosniff',
+  }
+  const allowedOrigin = allowedOriginFor(request)
+  if (allowedOrigin) headers['Access-Control-Allow-Origin'] = allowedOrigin
+  return headers
+}
 
-export const preflight = (request: Request): Response | undefined =>
-  request.method === 'OPTIONS' ? new Response(null, { status: 204, headers: securityHeaders }) : undefined
+export const json = (body: unknown, status = 200, request?: Request) =>
+  new Response(JSON.stringify(body), { status, headers: { ...securityHeaders(request), 'Content-Type': 'application/json' } })
+
+export const preflight = (request: Request): Response | undefined => {
+  if (request.method !== 'OPTIONS') return undefined
+  if (request.headers.get('Origin') && !allowedOriginFor(request)) {
+    return json({ error: { code: 'origin_not_allowed' } }, 403, request)
+  }
+  return new Response(null, { status: 204, headers: securityHeaders(request) })
+}
 
 export function serviceClient() {
   const url = Deno.env.get('SUPABASE_URL')

@@ -12,7 +12,7 @@ import './styles/premium.css'
 import QRCode from 'qrcode'
 import { createIcons, ArrowRight, BadgeCheck, Building2, Check, ChevronRight, CircleHelp, Clock3, Copy, Fingerprint, Gavel, Globe2, KeyRound, Landmark, Languages, LogIn, LogOut, Phone, RefreshCw, RotateCcw, ScanLine, ShieldCheck, ShieldX, UserRoundCheck, UsersRound, X, Zap } from 'lucide'
 import { attacks } from './security/attackSuite'
-import { issueDemoMandate, resolveDemoMandate, bankPolicy, demoRepresentativeStatus, revokeDemoRepresentative } from './services/demoStore'
+import { DemoIssuanceError, issueDemoMandate, resolveDemoMandate, bankPolicy, demoRepresentativeStatus, revokeDemoRepresentative } from './services/demoStore'
 import { getOrCreateRepresentativeKey, randomCode, removeRepresentativeKey, rotateRepresentativeKey, sha256, stableStringify } from './services/cryptoBridge'
 import { loadSwiftVerifier, swiftStatus, verifyWithSwift } from './services/wasmBridge'
 import { t, type Language } from './i18n'
@@ -139,7 +139,7 @@ function representativePage(): string {
   return shell(`<section class="dashboard-welcome employee-welcome"><div><span>Organisation workspace</span><strong>${escape(currentIdentity?.institutionName ?? 'Bharat Trust Bank — DEMO')}</strong><small>Membership and role verified from protected institution records.</small></div><div class="session-trust"><i data-lucide="badge-check"></i><span><strong>Employee authenticated</strong>Representative access · Active</span></div></section><section class="page-head employee-head illustrated-head"><div class="route-art employee-art"><img src="/assets/employee-authority.jpg" width="1448" height="1086" alt="A representative creates a proof containing only approved conversation actions"/><span class="art-caption"><strong>Policy-guided</strong>Unsafe requests are blocked before sharing.</span></div><div class="head-copy"><span class="eyebrow">Employee dashboard · ${escape(currentIdentity?.institutionName ?? 'Bharat Trust Bank — DEMO')}</span><h1>Create a trusted interaction proof</h1><p>The receiver gives you a private challenge. Your device signs a short-lived proof of exactly what you are allowed to discuss.</p><div class="profile-card"><div class="avatar">AS</div><div><strong>${escape(currentIdentity?.displayName ?? 'Aarav Sharma — DEMO')}</strong><span>KYC Verification Officer</span></div><span class="status-dot">Active</span></div></div></section>
   <section class="dashboard-grid"><aside class="dashboard-nav"><div class="active">${phosphor('key')} New interaction</div><div>${phosphor('fingerprint')} Device key ready</div><div>${phosphor('clock')} Recent proofs stay local</div><div class="policy-summary"><span>Signed policy</span><strong>Bank KYC Review v1</strong><small>4 actions allowed · 8 blocked</small></div></aside>
   <div class="issuance-card"><div class="form-progress"><span class="done">1</span><i></i><span class="active">2</span><i></i><span>3</span></div><h2>What will this conversation cover?</h2><p class="muted">Only actions explicitly allowed by your organisation can be included.</p><form id="issue-form"><label for="employee-challenge">Receiver's 8-character check code</label><input id="employee-challenge" name="employee-challenge" maxlength="9" placeholder="ABCD2345" required /><fieldset><legend>Choose approved actions</legend>${bankPolicy.permittedActionCodes.map((action, index) => `<label class="action-option"><input type="checkbox" name="action" value="${action}" ${index === 0 ? 'checked' : ''}/><span><i data-lucide="check"></i></span><strong>${actionLabel(action)}</strong><small>${action === 'confirm-masked-reference' ? 'Confirm only a partially hidden case or account reference.' : 'Approved by Bank KYC Review v1.'}</small></label>`).join('')}</fieldset><details class="blocked-actions"><summary><i data-lucide="x"></i> ${bankPolicy.prohibitedActionCodes.length} requests this role can never make</summary><ul>${bankPolicy.prohibitedActionCodes.map(action => `<li>${actionLabel(action)}</li>`).join('')}</ul></details><button class="button primary wide" type="submit">Create 90-second proof <i data-lucide="arrow-right"></i></button><button class="danger-demo" id="unauthorised-demo" type="button">Demonstrate a blocked OTP request</button></form><div id="issue-output" aria-live="polite"></div></div>
-  <aside class="device-card"><div class="device-icon"><i data-lucide="fingerprint"></i></div><span class="status-dot">This device is enrolled</span><h3>Private signing key</h3><p>Your private key is non-exportable and remains in this browser.</p><dl><div><dt>Algorithm</dt><dd>P-256 / ES256</dd></div><div><dt>Storage</dt><dd>Browser key store</dd></div><div><dt>Key status</dt><dd id="key-status">Checking…</dd></div></dl><div class="key-actions"><button id="rotate-key" type="button">Rotate key</button><button id="remove-key" type="button">Remove key</button></div><p class="small-warning">Clearing browser storage removes this key. Production recovery requires administrator re-enrolment.</p></aside></section>`)
+  <aside class="device-card"><div class="device-icon"><i data-lucide="fingerprint"></i></div><span class="status-dot" id="device-enrolment-status">Local key · enrols on first proof</span><h3>Private signing key</h3><p>Your private key is non-exportable and remains in this browser.</p><dl><div><dt>Algorithm</dt><dd>P-256 / ES256</dd></div><div><dt>Storage</dt><dd>Browser key store</dd></div><div><dt>Key status</dt><dd id="key-status">Checking…</dd></div></dl><div class="key-actions"><button id="rotate-key" type="button">Rotate key</button><button id="remove-key" type="button">Remove key</button></div><p class="small-warning">Clearing browser storage removes this key. Production recovery requires administrator re-enrolment.</p></aside></section>`)
 }
 
 function attackLabPage(): string {
@@ -256,21 +256,72 @@ async function bindPage(): Promise<void> {
     })()
   })
   const keyStatus = document.querySelector('#key-status')
-  if (keyStatus) void getOrCreateRepresentativeKey().then(() => { keyStatus.textContent = 'Ready on this browser' }).catch(() => { keyStatus.textContent = 'Unavailable' })
-  document.querySelector('#rotate-key')?.addEventListener('click', () => void rotateRepresentativeKey().then(() => { if (keyStatus) keyStatus.textContent = 'Rotated just now' }))
-  document.querySelector('#remove-key')?.addEventListener('click', () => void removeRepresentativeKey().then(() => { if (keyStatus) keyStatus.textContent = 'Removed — create a proof to re-enrol' }))
+  const enrolmentStatus = document.querySelector('#device-enrolment-status')
+  if (keyStatus) void getOrCreateRepresentativeKey().then(() => { keyStatus.textContent = 'Ready on this browser' }).catch(() => {
+    keyStatus.textContent = 'Unavailable'
+    if (enrolmentStatus) enrolmentStatus.textContent = 'Signing key unavailable'
+  })
+  document.querySelector('#rotate-key')?.addEventListener('click', () => void rotateRepresentativeKey().then(() => {
+    if (keyStatus) keyStatus.textContent = 'Rotated just now'
+    if (enrolmentStatus) enrolmentStatus.textContent = 'New local key · enrols on first proof'
+  }).catch(() => {
+    if (keyStatus) keyStatus.textContent = 'Rotation unavailable'
+    if (enrolmentStatus) enrolmentStatus.textContent = 'Signing key unavailable'
+  }))
+  document.querySelector('#remove-key')?.addEventListener('click', () => void removeRepresentativeKey().then(() => {
+    if (keyStatus) keyStatus.textContent = 'Removed — recreated on next proof'
+    if (enrolmentStatus) enrolmentStatus.textContent = 'No local signing key'
+  }).catch(() => {
+    if (keyStatus) keyStatus.textContent = 'Could not remove key'
+  }))
   document.querySelector<HTMLFormElement>('#issue-form')?.addEventListener('submit', event => {
     event.preventDefault(); void (async () => {
-      const data = new FormData(event.currentTarget as HTMLFormElement)
+      const form = event.currentTarget as HTMLFormElement
+      const submitButton = form.querySelector<HTMLButtonElement>('button[type="submit"]')
+      if (submitButton?.disabled) return
+      const originalButtonMarkup = submitButton?.innerHTML ?? ''
+      if (submitButton) {
+        submitButton.disabled = true
+        submitButton.textContent = 'Creating secure proof…'
+      }
+      form.setAttribute('aria-busy', 'true')
+      const data = new FormData(form)
       const challenge = data.get('employee-challenge')?.toString() ?? ''
       const actions = data.getAll('action').map(String)
       const output = document.querySelector('#issue-output')!
+      output.innerHTML = '<div class="loading"><span></span><h2>Creating the signed proof…</h2><p>Enrolling this device and checking the institution policy.</p></div>'
       try {
-        const evidence = await issueDemoMandate(challenge, actions)
-        const qr = await QRCode.toDataURL(JSON.stringify({ v: 1, code: evidence.mandate.verificationCode }), { margin: 1, width: 220 })
-        output.innerHTML = `<div class="issued-proof"><span class="verified-label"><i data-lucide="badge-check"></i> Signed by this device</span><h2>Share this proof with the receiver</h2><div class="proof-share"><img src="${qr}" alt="QR code containing the verification code"/><div><span>VERIFICATION CODE</span><strong>${evidence.mandate.verificationCode}</strong><p><i data-lucide="clock-3"></i> Expires in 90 seconds</p></div></div><p class="proof-note">The receiver must check this with their own private challenge.</p></div>`
-      } catch (error) { output.innerHTML = `<div class="inline-error"><i data-lucide="x"></i><p>${escape(error instanceof Error ? error.message : String(error))}</p></div>` }
-      createIcons({ icons })
+        const { evidence, localCacheStored } = await issueDemoMandate(challenge, actions)
+        if (enrolmentStatus) enrolmentStatus.textContent = 'Institution enrolment confirmed'
+        let qrMarkup = ''
+        let qrAvailable = false
+        try {
+          const qr = await QRCode.toDataURL(JSON.stringify({ v: 1, code: evidence.mandate.verificationCode }), { margin: 1, width: 220 })
+          qrMarkup = `<img src="${qr}" alt="QR code containing the verification code"/>`
+          qrAvailable = true
+        } catch {
+          // The institution has already accepted the proof. The manual code remains
+          // authoritative when this optional presentation layer is unavailable.
+        }
+        const fallbackNotes = [
+          !qrAvailable ? 'QR unavailable—read the six-character code aloud instead.' : '',
+          !localCacheStored ? 'The institution accepted this proof, but this browser could not keep its optional local backup.' : ''
+        ].filter(Boolean)
+        const proofNote = fallbackNotes.length ? fallbackNotes.join(' ') : 'The receiver must check this with their own private challenge.'
+        output.innerHTML = `<div class="issued-proof"><span class="verified-label"><i data-lucide="badge-check"></i> Signed and accepted by the institution</span><h2>Share this proof with the receiver</h2><div class="proof-share">${qrMarkup}<div><span>VERIFICATION CODE</span><strong>${evidence.mandate.verificationCode}</strong><p><i data-lucide="clock-3"></i> Expires in 90 seconds</p></div></div><p class="proof-note">${proofNote}</p></div>`
+      } catch (error) {
+        const message = error instanceof DemoIssuanceError
+          ? error.message
+          : 'We could not create the proof securely. No proof was issued. Please try again.'
+        output.innerHTML = `<div class="inline-error"><i data-lucide="x"></i><p>${escape(message)}</p></div>`
+      } finally {
+        form.removeAttribute('aria-busy')
+        if (submitButton) {
+          submitButton.disabled = false
+          submitButton.innerHTML = originalButtonMarkup
+        }
+        createIcons({ icons })
+      }
     })()
   })
   document.querySelector('#unauthorised-demo')?.addEventListener('click', () => {
