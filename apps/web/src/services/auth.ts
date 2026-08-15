@@ -67,15 +67,17 @@ export const supabase: SupabaseClient = createClient(supabaseUrl, publishableKey
 let cachedIdentity: AppIdentity | null | undefined
 
 async function resolveIdentity(userId: string, email: string): Promise<AppIdentity> {
-  const [{ data: profile, error: profileError }, { data: memberships, error: membershipError }] = await Promise.all([
-    supabase.from('profiles').select('display_name, platform_role').eq('id', userId).single(),
-    supabase.from('institution_memberships').select('institution_id, membership_role, institutions(display_name)').eq('user_id', userId).eq('status', 'active').limit(1)
-  ])
+  const { data: profile, error: profileError } = await supabase.from('profiles').select('display_name, platform_role').eq('id', userId).single()
   if (profileError) throw new Error('Your account exists, but its protected role profile could not be loaded.')
+  const profileRole = profile.platform_role as AppRole
+  if (profileRole === 'citizen') {
+    return { userId, email, displayName: profile.display_name, role: 'citizen' }
+  }
+
+  const { data: memberships, error: membershipError } = await supabase.from('institution_memberships').select('institution_id, membership_role, institutions(display_name)').eq('user_id', userId).eq('status', 'active').limit(1)
   if (membershipError) throw new Error('Your organisation membership could not be verified.')
 
   const membership = memberships?.[0] as { institution_id: string; membership_role: AppRole; institutions?: { display_name?: string } | { display_name?: string }[] } | undefined
-  const profileRole = profile.platform_role as AppRole
   const role = membership?.membership_role ?? profileRole
   if (!['citizen', 'representative', 'institution_admin'].includes(role)) throw new Error('This demonstration does not expose a dashboard for your account role.')
   const institution = Array.isArray(membership?.institutions) ? membership?.institutions[0] : membership?.institutions
