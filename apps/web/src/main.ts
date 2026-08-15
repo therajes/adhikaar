@@ -12,7 +12,7 @@ import './styles/premium.css'
 import QRCode from 'qrcode'
 import { createIcons, ArrowRight, BadgeCheck, Building2, Check, ChevronRight, CircleHelp, Clock3, Copy, Fingerprint, Gavel, Globe2, KeyRound, Landmark, Languages, LogIn, LogOut, Phone, RefreshCw, RotateCcw, ScanLine, ShieldCheck, ShieldX, UserRoundCheck, UsersRound, X, Zap } from 'lucide'
 import { attacks } from './security/attackSuite'
-import { DemoIssuanceError, issueDemoMandate, resolveDemoMandate, bankPolicy, demoRepresentativeStatus, revokeDemoRepresentative } from './services/demoStore'
+import { DemoIssuanceError, authoriseDemoReplacement, issueDemoMandate, resolveDemoMandate, bankPolicy, demoRepresentativeStatus, revokeDemoRepresentative } from './services/demoStore'
 import { getOrCreateRepresentativeKey, randomCode, removeRepresentativeKey, rotateRepresentativeKey, sha256, stableStringify } from './services/cryptoBridge'
 import { loadSwiftVerifier, swiftStatus, verifyWithSwift } from './services/wasmBridge'
 import { t, type Language } from './i18n'
@@ -353,9 +353,11 @@ async function bindPage(): Promise<void> {
     } else if (status.revoked) {
       consoleCard.classList.add('revoked')
       statusLabel.innerHTML = '<span></span>Revoked in the immutable trust record'
-      revokeButton.disabled = true
+      revokeButton.disabled = status.replacementPending
       revokeButton.className = 'button secondary wide'
-      revokeButton.innerHTML = '<i data-lucide="shield-x"></i>Credential permanently revoked'
+      revokeButton.innerHTML = status.replacementPending
+        ? '<i data-lucide="fingerprint"></i>Replacement approved · awaiting employee'
+        : '<i data-lucide="rotate-ccw"></i>Issue replacement credential'
     } else {
       statusLabel.innerHTML = '<span></span>Active and in good standing'
       revokeButton.disabled = false
@@ -367,10 +369,16 @@ async function bindPage(): Promise<void> {
   revokeButton?.addEventListener('click', () => void (async () => {
     const message = document.querySelector<HTMLElement>('#revocation-message')!
     revokeButton.disabled = true
-    revokeButton.innerHTML = '<span class="button-spinner"></span> Publishing revocation…'
+    const status = await demoRepresentativeStatus()
+    revokeButton.innerHTML = `<span class="button-spinner"></span> ${status.revoked ? 'Authorising replacement…' : 'Publishing revocation…'}`
     try {
-      await revokeDemoRepresentative()
-      message.textContent = 'Revocation published. Any existing proof now fails closed on the citizen side.'
+      if (status.revoked) {
+        await authoriseDemoReplacement()
+        message.textContent = 'Old revocation preserved. Ask the employee to rotate their browser key, then create a new proof.'
+      } else {
+        await revokeDemoRepresentative()
+        message.textContent = 'Revocation published. Any existing proof now fails closed on the citizen side.'
+      }
       await updateRevocationCard()
     } catch (error) {
       message.textContent = error instanceof Error ? error.message : String(error)

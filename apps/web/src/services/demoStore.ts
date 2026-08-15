@@ -28,11 +28,12 @@ export interface DemoIssuanceResult {
   localCacheStored: boolean
 }
 
-export async function demoRepresentativeStatus(): Promise<{ id: string; institutionId: string; revoked: boolean }> {
-  const { data: representative, error } = await supabase.from('representatives').select('id,institution_id,status,credential_id').eq('display_name', 'Aarav Sharma — DEMO').maybeSingle()
-  if (error || !representative) return { id: '', institutionId: '20000000-0000-0000-0000-000000000001', revoked: false }
+export async function demoRepresentativeStatus(): Promise<{ id: string; institutionId: string; revoked: boolean; replacementPending: boolean }> {
+  const { data: representative, error } = await supabase.from('representatives').select('id,institution_id,status,credential_id,auth_user_id,created_at').eq('display_name', 'Aarav Sharma — DEMO').order('created_at', { ascending: false }).limit(1).maybeSingle()
+  if (error || !representative) return { id: '', institutionId: '20000000-0000-0000-0000-000000000001', revoked: false, replacementPending: false }
   const { data: revocations } = await supabase.from('revocations').select('id').eq('subject_type', 'representative').eq('subject_id', representative.id).limit(1)
-  return { id: representative.id, institutionId: representative.institution_id, revoked: representative.status === 'revoked' || Boolean(revocations?.length) }
+  const revoked = representative.status === 'revoked' || Boolean(revocations?.length)
+  return { id: representative.id, institutionId: representative.institution_id, revoked, replacementPending: revoked && !representative.auth_user_id }
 }
 
 export async function revokeDemoRepresentative(): Promise<void> {
@@ -49,6 +50,16 @@ export async function revokeDemoRepresentative(): Promise<void> {
     }
   })
   if (error) throw new Error('The immutable revocation could not be published.')
+}
+
+export async function authoriseDemoReplacement(): Promise<void> {
+  const status = await demoRepresentativeStatus()
+  if (!status.id || !status.revoked) throw new Error('There is no revoked fictional credential to replace.')
+  if (status.replacementPending) return
+  const { error } = await supabase.functions.invoke('replace-demo-credential', {
+    body: { institutionId: status.institutionId, representativeId: status.id }
+  })
+  if (error) throw new Error('The replacement credential could not be authorised.')
 }
 
 export async function issueDemoMandate(challenge: string, requestedActionCodes: string[]): Promise<DemoIssuanceResult> {

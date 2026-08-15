@@ -427,6 +427,9 @@ verify_jwt = true
 [functions.revoke-subject]
 verify_jwt = true
 
+[functions.replace-demo-credential]
+verify_jwt = true
+
 [functions.publish-registry-snapshot]
 verify_jwt = true
 
