@@ -430,6 +430,9 @@ verify_jwt = true
 [functions.replace-demo-credential]
 verify_jwt = true
 
+[functions.customer-complaints]
+verify_jwt = true
+
 [functions.publish-registry-snapshot]
 verify_jwt = true
 

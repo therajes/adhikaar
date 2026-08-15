@@ -28,6 +28,28 @@ export interface DemoIssuanceResult {
   localCacheStored: boolean
 }
 
+export interface CustomerComplaint {
+  id: string; message: string; status: 'pending' | 'dismissed' | 'credential_revoked'
+  created_at: string; citizenName: string
+  representatives?: { display_name?: string } | null
+}
+
+export async function submitCustomerComplaint(mandateId: string, message: string): Promise<void> {
+  const { error } = await supabase.functions.invoke('customer-complaints', { body: { action: 'submit', mandateId, message } })
+  if (error) throw new Error('Your report could not be sent. It may already have been submitted for this proof.')
+}
+
+export async function listCustomerComplaints(): Promise<CustomerComplaint[]> {
+  const { data, error } = await supabase.functions.invoke('customer-complaints', { body: { action: 'list' } })
+  if (error) throw new Error('Customer reports could not be loaded.')
+  return (data?.complaints ?? []) as CustomerComplaint[]
+}
+
+export async function resolveCustomerComplaint(complaintId: string, decision: 'dismiss' | 'revoke'): Promise<void> {
+  const { error } = await supabase.functions.invoke('customer-complaints', { body: { action: 'resolve', complaintId, decision } })
+  if (error) throw new Error('The administrator decision could not be saved.')
+}
+
 export async function demoRepresentativeStatus(): Promise<{ id: string; institutionId: string; revoked: boolean; replacementPending: boolean }> {
   const { data: representative, error } = await supabase.from('representatives').select('id,institution_id,status,credential_id,auth_user_id,created_at').eq('display_name', 'Aarav Sharma — DEMO').order('created_at', { ascending: false }).limit(1).maybeSingle()
   if (error || !representative) return { id: '', institutionId: '20000000-0000-0000-0000-000000000001', revoked: false, replacementPending: false }

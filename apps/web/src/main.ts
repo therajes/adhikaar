@@ -12,7 +12,7 @@ import './styles/premium.css'
 import QRCode from 'qrcode'
 import { createIcons, ArrowRight, BadgeCheck, Building2, Check, ChevronRight, CircleHelp, Clock3, Copy, Fingerprint, Gavel, Globe2, KeyRound, Landmark, Languages, LogIn, LogOut, Phone, RefreshCw, RotateCcw, ScanLine, ShieldCheck, ShieldX, UserRoundCheck, UsersRound, X, Zap } from 'lucide'
 import { attacks } from './security/attackSuite'
-import { DemoIssuanceError, authoriseDemoReplacement, issueDemoMandate, resolveDemoMandate, bankPolicy, demoRepresentativeStatus, revokeDemoRepresentative } from './services/demoStore'
+import { DemoIssuanceError, authoriseDemoReplacement, issueDemoMandate, listCustomerComplaints, resolveCustomerComplaint, resolveDemoMandate, submitCustomerComplaint, bankPolicy, demoRepresentativeStatus, revokeDemoRepresentative } from './services/demoStore'
 import { getOrCreateRepresentativeKey, randomCode, removeRepresentativeKey, rotateRepresentativeKey, sha256, stableStringify } from './services/cryptoBridge'
 import { loadSwiftVerifier, swiftStatus, verifyWithSwift } from './services/wasmBridge'
 import { t, type Language } from './i18n'
@@ -250,7 +250,23 @@ async function bindPage(): Promise<void> {
     event.preventDefault(); void (async () => {
       const code = new FormData(event.currentTarget as HTMLFormElement).get('code')?.toString() ?? ''
       const container = document.querySelector('#verification-result')!; container.innerHTML = '<div class="loading"><span></span><h2>Checking the signed proof…</h2><p>Identity, permission, freshness and registry status are checked on this device.</p></div>'
-      try { const evidence = await resolveDemoMandate(code, citizenChallenge); const verified = verifyWithSwift(evidence); container.className = ''; container.innerHTML = resultMarkup(verified.result, verified.durationMs) }
+      try {
+        const evidence = await resolveDemoMandate(code, citizenChallenge)
+        const verified = verifyWithSwift(evidence)
+        container.className = ''
+        container.innerHTML = `${resultMarkup(verified.result, verified.durationMs)}<section class="complaint-box"><span class="verified-label"><i data-lucide="message-square-warning"></i> Report a verbal request</span><h2>Did the employee ask for something unsafe?</h2><p>This message goes only to the administrator of the organisation proven by this code.</p><form id="complaint-form"><textarea name="message" minlength="10" maxlength="1000" required placeholder="Describe exactly what the employee verbally requested…"></textarea><button class="button secondary wide" type="submit">Send confidential report</button><p class="complaint-feedback" aria-live="polite"></p></form></section>`
+        document.querySelector<HTMLFormElement>('#complaint-form')?.addEventListener('submit', complaintEvent => {
+          complaintEvent.preventDefault(); void (async () => {
+            const form = complaintEvent.currentTarget as HTMLFormElement
+            const button = form.querySelector<HTMLButtonElement>('button')!
+            const feedback = form.querySelector<HTMLElement>('.complaint-feedback')!
+            const message = new FormData(form).get('message')?.toString() ?? ''
+            button.disabled = true; button.textContent = 'Sending securely…'
+            try { await submitCustomerComplaint(evidence.mandate.mandateId, message); feedback.textContent = 'Report sent to the organisation administrator.'; form.querySelector('textarea')?.setAttribute('disabled', '') }
+            catch (complaintError) { feedback.textContent = complaintError instanceof Error ? complaintError.message : 'Report could not be sent.'; button.disabled = false }
+          })()
+        })
+      }
       catch (error) { container.className = ''; container.innerHTML = `<div class="result-card danger"><div class="result-symbol"><i data-lucide="x"></i></div><h2>We could not verify this request</h2><p>${escape(error instanceof Error ? error.message : String(error))}</p><div class="safe-callback"><i data-lucide="phone"></i><span>Stop and call the organisation through a number you already trust.</span></div></div>` }
       createIcons({ icons })
     })()
@@ -346,6 +362,21 @@ async function bindPage(): Promise<void> {
     for (let index = 0; index < cards.length; index += 1) { const attack = catalog[index]; const card = cards[index]; if (attack && card) results.push(await run(card, attack.evidence, attack.expected)) }
     const passed = results.filter(Boolean).length; document.querySelector('#suite-summary')!.innerHTML = `<strong>${passed}/${results.length}</strong> defined adversarial checks rejected as expected${passed === results.length ? ' ✓' : ''}`
   })())
+  const adminGrid = document.querySelector<HTMLElement>('.admin-grid')
+  if (adminGrid) adminGrid.insertAdjacentHTML('afterend', '<section class="complaints-panel"><span class="section-kicker">Customer safety inbox</span><h2>Reports from verified interactions</h2><p>Only reports tied to this organisation’s employee proofs appear here.</p><div id="complaint-list" aria-live="polite"><div class="loading"><span></span><p>Loading customer reports…</p></div></div></section>')
+  const renderComplaints = async () => {
+    const list = document.querySelector<HTMLElement>('#complaint-list'); if (!list) return
+    try {
+      const complaints = await listCustomerComplaints()
+      list.innerHTML = complaints.length ? complaints.map(item => `<article class="complaint-card"><div><span>${escape(item.citizenName)} · ${new Date(item.created_at).toLocaleString()}</span><strong>${escape(item.representatives?.display_name ?? 'Organisation employee')}</strong><p>${escape(item.message)}</p></div>${item.status === 'pending' ? `<div class="complaint-actions"><button class="button secondary" data-complaint="${item.id}" data-decision="dismiss">Dismiss</button><button class="button primary" data-complaint="${item.id}" data-decision="revoke">Revoke credential</button></div>` : `<span class="complaint-state">${item.status === 'credential_revoked' ? 'Credential revoked' : 'Dismissed'}</span>`}</article>`).join('') : '<div class="empty-inbox"><strong>No customer reports</strong><p>New reports from verified calls will appear here.</p></div>'
+      list.querySelectorAll<HTMLButtonElement>('[data-complaint]').forEach(button => button.addEventListener('click', () => void (async () => {
+        button.disabled = true
+        try { await resolveCustomerComplaint(button.dataset.complaint!, button.dataset.decision as 'dismiss' | 'revoke'); await renderComplaints() }
+        catch (decisionError) { button.disabled = false; list.insertAdjacentHTML('afterbegin', `<p class="inline-error">${escape(decisionError instanceof Error ? decisionError.message : 'Decision failed.')}</p>`) }
+      })()))
+    } catch (complaintError) { list.innerHTML = `<p class="inline-error">${escape(complaintError instanceof Error ? complaintError.message : 'Customer reports unavailable.')}</p>` }
+  }
+  if (adminGrid) void renderComplaints()
   const revokeButton = document.querySelector<HTMLButtonElement>('#revoke-representative')
   const updateRevocationCard = async () => {
     if (!revokeButton) return

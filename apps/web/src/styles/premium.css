@@ -37,6 +37,16 @@
   font-synthesis: none;
 }
 
+.complaint-box,.complaints-panel{margin-top:1.25rem;padding:clamp(1.25rem,3vw,2rem);border:1px solid rgba(20,67,84,.14);border-radius:28px;background:rgba(255,255,255,.92);box-shadow:0 18px 55px rgba(13,45,58,.09)}
+.complaint-box textarea{width:100%;min-height:118px;margin:1rem 0;padding:1rem;border:1px solid #b8c8d0;border-radius:16px;background:#fff;color:#102b3a;font:inherit;resize:vertical}
+.complaint-feedback{min-height:1.5rem;margin-top:.75rem;color:#31576a}
+.complaints-panel{max-width:1180px;margin:2rem auto}
+#complaint-list{display:grid;gap:1rem;margin-top:1.25rem}
+.complaint-card{display:flex;justify-content:space-between;gap:1.5rem;align-items:center;padding:1.15rem;border:1px solid #d6e0e4;border-radius:20px;background:#fff}
+.complaint-card span{font-size:.82rem;color:#5b6f7a}.complaint-card strong{display:block;margin:.3rem 0}.complaint-card p{margin:0;color:#294b5c}
+.complaint-actions{display:flex;gap:.65rem;flex-shrink:0}.complaint-state,.empty-inbox{padding:1rem;border-radius:14px;background:#f1f7f5;color:#176b5c}
+@media(max-width:700px){.complaint-card{align-items:stretch;flex-direction:column}.complaint-actions{flex-direction:column}}
+
 html { scroll-behavior: smooth; }
 
 body {
