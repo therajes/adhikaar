@@ -261,6 +261,12 @@ async function bindPage(): Promise<void> {
     keyStatus.textContent = 'Unavailable'
     if (enrolmentStatus) enrolmentStatus.textContent = 'Signing key unavailable'
   })
+  if (enrolmentStatus) void demoRepresentativeStatus().then(status => {
+    if (status.replacementPending) {
+      enrolmentStatus.textContent = 'Replacement approved · rotate key before next proof'
+      if (keyStatus) keyStatus.textContent = 'Rotation required'
+    }
+  })
   document.querySelector('#rotate-key')?.addEventListener('click', () => void rotateRepresentativeKey().then(() => {
     if (keyStatus) keyStatus.textContent = 'Rotated just now'
     if (enrolmentStatus) enrolmentStatus.textContent = 'New local key · enrols on first proof'
